@@ -1,0 +1,80 @@
+name: Frontend Continuous Deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'starter/frontend/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
+      - run: npm ci
+        working-directory: starter/frontend
+      - run: npm run lint
+        working-directory: starter/frontend
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
+      - run: npm ci
+        working-directory: starter/frontend
+      - run: CI=true npm test
+        working-directory: starter/frontend
+
+  deploy:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: vars
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name cluster --region us-east-1
+
+      - name: Get backend API URL
+        id: backend-url
+        run: |
+          URL=$(kubectl get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "BACKEND_URL=http://$URL" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend image
+        working-directory: starter/frontend
+        run: |
+          docker build --build-arg=REACT_APP_MOVIE_API_URL=${{ steps.backend-url.outputs.BACKEND_URL }} \
+            --tag ${{ steps.ecr-login.outputs.registry }}/frontend:${{ steps.vars.outputs.IMAGE_TAG }} .
+          docker push ${{ steps.ecr-login.outputs.registry }}/frontend:${{ steps.vars.outputs.IMAGE_TAG }}
+
+      - name: Deploy to Kubernetes
+        working-directory: starter/frontend/k8s
+        run: |
+          kustomize edit set image frontend=${{ steps.ecr-login.outputs.registry }}/frontend:${{ steps.vars.outputs.IMAGE_TAG }}
+          kustomize build . | kubectl apply -f -
