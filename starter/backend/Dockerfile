@@ -1,17 +1,19 @@
-FROM public.ecr.aws/docker/library/python:3.10-alpine
+FROM public.ecr.aws/docker/library/python:3.10-slim
+
 ENV FLASK_RUN_HOST=0.0.0.0
 
 WORKDIR /
-RUN adduser -u 1000 -D app
-RUN apk update && \
-  apk add \
-  pcre \
-  pcre-dev \
-  build-base \
+
+RUN adduser -u 1000 --disabled-password --gecos "" app
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  libpcre3 \
+  libpcre3-dev \
+  build-essential \
   gcc \
-  linux-headers \
-  openssl \
+  libssl-dev \
   libffi-dev \
+  && rm -rf /var/lib/apt/lists/* \
   && pip install pipenv
 
 RUN mkdir -p /var/www/app && mkdir /app
