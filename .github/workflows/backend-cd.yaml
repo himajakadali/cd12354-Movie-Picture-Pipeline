@@ -1,0 +1,73 @@
+name: Backend Continuous Deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'starter/backend/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pipenv
+      - run: pip install pipenv
+      - run: pipenv install --dev
+        working-directory: starter/backend
+      - run: pipenv run lint
+        working-directory: starter/backend
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pipenv
+      - run: pip install pipenv
+      - run: pipenv install --dev
+        working-directory: starter/backend
+      - run: pipenv run test
+        working-directory: starter/backend
+
+  deploy:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: vars
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend image
+        working-directory: starter/backend
+        run: |
+          docker build --tag ${{ steps.ecr-login.outputs.registry }}/backend:${{ steps.vars.outputs.IMAGE_TAG }} .
+          docker push ${{ steps.ecr-login.outputs.registry }}/backend:${{ steps.vars.outputs.IMAGE_TAG }}
+
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name cluster --region us-east-1
+
+      - name: Deploy to Kubernetes
+        working-directory: starter/backend/k8s
+        run: |
+          kustomize edit set image backend=${{ steps.ecr-login.outputs.registry }}/backend:${{ steps.vars.outputs.IMAGE_TAG }}
+          kustomize build . | kubectl apply -f -
