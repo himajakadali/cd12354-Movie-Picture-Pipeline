@@ -1,0 +1,8 @@
+Frontend continuous development-https://github.com/himajakadali/cd12354-Movie-Picture-Pipeline/actions/runs/31473488947
+
+Frontend continuous integration-https://github.com/himajakadali/cd12354-Movie-Picture-Pipeline/actions/runs/31571898806
+
+Backend continuous integration-https://github.com/himajakadali/cd12354-Movie-Picture-Pipeline/actions/runs/31571796247
+
+Backend continuous development-https://github.com/himajakadali/cd12354-Movie-Picture-Pipeline/actions/runs/31472822804
+
